@@ -3,6 +3,46 @@ import { type NextRequest, NextResponse } from "next/server"
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const RESEND_FROM = process.env.RESEND_FROM
 
+function buildEmailHtml(message: string) {
+  const safe = (message || "").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  const withBreaks = safe.replace(/\n/g, "<br>")
+  return `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Message</title>
+      <style>
+        body { margin:0; padding:0; background:#f6f7fb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol'; }
+        .preheader { display:none; visibility:hidden; opacity:0; color:transparent; height:0; width:0; overflow:hidden; mso-hide:all; }
+        .container { max-width: 560px; margin: 0 auto; background:#ffffff; border-radius:12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .header { padding: 24px; border-bottom:1px solid #eef0f4; }
+        .header h1 { margin:0; font-size:18px; color:#111827; }
+        .content { padding: 24px; color:#111827; line-height:1.6; font-size:15px; }
+        .footer { padding: 16px 24px 24px; color:#6b7280; font-size:12px; }
+        .badge { display:inline-block; padding:4px 8px; border-radius:999px; background:#eef2ff; color:#3730a3; font-weight:600; font-size:12px; }
+      </style>
+    </head>
+    <body>
+      <span class="preheader">Important: quick assistance requested</span>
+      <div style="padding: 24px;">
+        <div class="container">
+          <div class="header">
+            <span class="badge">Notification</span>
+            <h1>Quick assistance requested</h1>
+          </div>
+          <div class="content">
+            <div>${withBreaks}</div>
+          </div>
+          <div class="footer">
+            <div>This message was sent via Bulk Messaging App.</div>
+          </div>
+        </div>
+      </div>
+    </body>
+  </html>`
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { emails, content } = await request.json()
@@ -36,9 +76,9 @@ export async function POST(request: NextRequest) {
           body: JSON.stringify({
             from: RESEND_FROM, // Must be a verified domain/sender in Resend
             to: [email],
-            subject: "Bulk Message",
+            subject: "Quick assistance requested",
             text: content,
-            html: `<p>${content.replace(/\n/g, "<br>")}</p>`,
+            html: buildEmailHtml(content),
           }),
         })
 

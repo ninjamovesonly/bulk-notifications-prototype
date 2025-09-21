@@ -1,8 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID
+// Support both naming conventions
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN
-const TWILIO_FROM = process.env.TWILIO_FROM // E.164 format, e.g. "+1234567890"
+const TWILIO_FROM = process.env.TWILIO_FROM || process.env.TWILIO_PHONE // E.164 format, e.g. "+1234567890"
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,11 +18,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-      return NextResponse.json({ error: "Twilio credentials are not configured on the server" }, { status: 500 })
+      return NextResponse.json({ error: "Twilio credentials (SID/Auth Token) are not configured on the server" }, { status: 500 })
     }
 
     if (!TWILIO_FROM) {
-      return NextResponse.json({ error: "TWILIO_FROM is not configured on the server" }, { status: 500 })
+      return NextResponse.json({ error: "Twilio From number is not configured on the server" }, { status: 500 })
     }
 
     const results = []
