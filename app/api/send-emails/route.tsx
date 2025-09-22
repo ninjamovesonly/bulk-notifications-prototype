@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
-const RESEND_FROM = process.env.RESEND_FROM
+const RESEND_FROM = process.env.RESEND_FROM || "Logistics App <no-reply@swiftifylogistics.online>"
 
 function buildEmailHtml(message: string) {
   const safe = (message || "").replace(/</g, "&lt;").replace(/>/g, "&gt;")
