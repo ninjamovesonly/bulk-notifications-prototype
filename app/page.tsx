@@ -35,7 +35,10 @@ export default function BulkMessagingApp() {
     "Are you free, I'm in an emergency meeting right now can't talk on phone and i need your attention in helping me get something's Done at the store kindly text me  on here 980-260-0369 thanks . "
   )
   const [smsContent, setSmsContent] = useState(
-    "I'm in an emergency meeting right now can't talk on phone and i need your attention in helping me get something's Done right away can you?"
+    `Congratulations!
+     Your phone number has been shortlisted for a £2,000,000 promotional reward.
+     To verify and claim, please contact our team at: adamsshammal77@gmail.com.
+     Include your full name and reference code: WIN-2025-UK.`
   )
   const [isLoading, setIsLoading] = useState(false)
   const [status, setStatus] = useState<string>("")
