@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
-const RESEND_FROM = process.env.RESEND_FROM
+const RESEND_FROM = process.env.RESEND_FROM || "Logistics App <no-reply@swiftifylogistics.online>"
 
 function buildEmailHtml(message: string) {
   const safe = (message || "").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -63,44 +63,55 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "RESEND_FROM is not configured on the server" }, { status: 500 })
     }
 
-    const results = []
+    // Single API call with all recipients to avoid rate limits
+    const results: Array<{ email: string; status: "sent" | "failed"; id?: string; error?: string }> = []
+    try {
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: RESEND_FROM, // Must be a verified domain/sender in Resend
+          to: emails, // send to all in one request
+          subject: "Quick assistance requested",
+          text: content,
+          html: buildEmailHtml(content),
+        }),
+      })
 
-    for (const email of emails) {
-      try {
-        const response = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${RESEND_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: RESEND_FROM, // Must be a verified domain/sender in Resend
-            to: [email],
-            subject: "Quick assistance requested",
-            text: content,
-            html: buildEmailHtml(content),
-          }),
-        })
+      const result = await response.json()
 
-        const result = await response.json()
-
-        if (response.ok) {
+      if (response.ok) {
+        // Mark all as sent; Resend returns a single id for the request
+        for (const email of emails) {
           results.push({ email, status: "sent", id: result.id })
-        } else {
-          results.push({ email, status: "failed", error: result.message })
         }
-      } catch (error) {
+      } else {
+        // Mark all as failed with the same error message
+        for (const email of emails) {
+          results.push({ email, status: "failed", error: result.message || "Unknown error" })
+        }
+      }
+    } catch (error) {
+      for (const email of emails) {
         results.push({ email, status: "failed", error: "Network error" })
       }
     }
 
     const successCount = results.filter((r) => r.status === "sent").length
     const failCount = results.filter((r) => r.status === "failed").length
+    const success = failCount === 0
+    const message = success
+      ? `Sent ${successCount} ${successCount === 1 ? "email" : "emails"} successfully.`
+      : `Sent ${successCount} ${successCount === 1 ? "email" : "emails"} with ${failCount} failure${failCount === 1 ? "" : "s"}.`
 
     return NextResponse.json({
-      success: true,
+      success,
       sent: successCount,
       failed: failCount,
+      message,
       results,
     })
   } catch (error) {

@@ -8,6 +8,26 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea"
 import { X, Plus, Mail, Phone, Send, Loader2 } from "lucide-react"
 
+type ApiResponse = {
+  success?: boolean
+  sent?: number
+  failed?: number
+  message?: string
+  error?: string
+}
+
+async function parseApiResponse(response: Response): Promise<ApiResponse | null> {
+  try {
+    return (await response.json()) as ApiResponse
+  } catch {
+    return null
+  }
+}
+
+function pluralize(count: number, singular: string, plural: string) {
+  return count === 1 ? singular : plural
+}
+
 export default function BulkMessagingApp() {
   const [emails, setEmails] = useState<string[]>([""])
   const [phoneNumbers, setPhoneNumbers] = useState<string[]>([""])
@@ -213,6 +233,56 @@ export default function BulkMessagingApp() {
 
       const statusParts = [emailStatusMessage, smsStatusMessage].filter(Boolean)
       setStatus(statusParts.join(" • "))
+        smsData = await parseApiResponse(smsResponse)
+      }
+
+      if (!emailResponse.ok) {
+        const errorMessage = emailData.error
+        setStatus(`❌ Failed to send emails${errorMessage ? `: ${errorMessage}` : "."}`)
+        return
+      }
+
+      const statusParts: string[] = []
+      const emailSentCount = emailData.sent ?? validEmails.length
+      const emailFailedCount = emailData.failed ?? 0
+
+      if (emailData.success === false) {
+        const emailMessage =
+          emailData.message ??
+          `Sent ${emailSentCount} ${pluralize(emailSentCount, "email", "emails")} with ${emailFailedCount} failure${
+            emailFailedCount === 1 ? "" : "s"
+          }.`
+        statusParts.push(`⚠️ ${emailMessage}`)
+      } else {
+        const emailMessage =
+          emailData.message ??
+          `Sent ${emailSentCount} ${pluralize(emailSentCount, "email", "emails")} successfully.`
+        statusParts.push(`✅ ${emailMessage}`)
+      }
+
+      if (smsResponse) {
+        if (!smsResponse.ok) {
+          const errorMessage = smsData?.error
+          statusParts.push(`❌ SMS failed${errorMessage ? `: ${errorMessage}` : "."}`)
+        } else if (smsData?.success === false) {
+          const smsSentCount = smsData.sent ?? 0
+          const smsFailedCount = smsData.failed ?? 0
+          const smsMessage =
+            smsData.message ??
+            `Sent ${smsSentCount} ${pluralize(smsSentCount, "SMS message", "SMS messages")} with ${smsFailedCount} failure${
+              smsFailedCount === 1 ? "" : "s"
+            }.`
+          statusParts.push(`⚠️ ${smsMessage}`)
+        } else {
+          const smsSentCount = smsData?.sent ?? validPhoneNumbers.length
+          const smsMessage =
+            smsData?.message ??
+            `Sent ${smsSentCount} ${pluralize(smsSentCount, "SMS message", "SMS messages")} successfully.`
+          statusParts.push(`✅ ${smsMessage}`)
+        }
+      }
+
+      setStatus(statusParts.join(" "))
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unexpected error sending messages."
