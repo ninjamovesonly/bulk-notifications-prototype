@@ -59,11 +59,16 @@ export async function POST(request: NextRequest) {
 
     const successCount = results.filter((r) => r.status === "sent").length
     const failCount = results.filter((r) => r.status === "failed").length
+    const success = failCount === 0
+    const message = success
+      ? `Sent ${successCount} ${successCount === 1 ? "SMS message" : "SMS messages"} successfully.`
+      : `Sent ${successCount} ${successCount === 1 ? "SMS message" : "SMS messages"} with ${failCount} failure${failCount === 1 ? "" : "s"}.`
 
     return NextResponse.json({
-      success: true,
+      success,
       sent: successCount,
       failed: failCount,
+      message,
       results,
     })
   } catch (error) {
