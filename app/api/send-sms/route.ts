@@ -4,6 +4,7 @@ import { type NextRequest, NextResponse } from "next/server"
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN
 const TWILIO_FROM = process.env.TWILIO_FROM || process.env.TWILIO_PHONE // E.164 format, e.g. "+1234567890"
+const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID // e.g. "MGXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,16 +22,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Twilio credentials (SID/Auth Token) are not configured on the server" }, { status: 500 })
     }
 
-    if (!TWILIO_FROM) {
-      return NextResponse.json({ error: "Twilio From number is not configured on the server" }, { status: 500 })
+    // Require either a Messaging Service SID or a From number
+    if (!TWILIO_MESSAGING_SERVICE_SID && !TWILIO_FROM) {
+      return NextResponse.json({ error: "Twilio Messaging Service SID or From number must be configured on the server" }, { status: 500 })
     }
 
-    const results = []
+    // If a From number is provided, basic sanity check: must be E.164 and not an MG SID
+    if (!TWILIO_MESSAGING_SERVICE_SID && TWILIO_FROM) {
+      const isE164 = /^\+[1-9]\d{6,14}$/.test(TWILIO_FROM)
+      if (!isE164) {
+        return NextResponse.json({ error: "TWILIO_FROM must be a valid E.164 phone number, e.g. +1234567890" }, { status: 500 })
+      }
+      if (/^MG[A-Za-z0-9]{32}$/.test(TWILIO_FROM)) {
+        return NextResponse.json({ error: "TWILIO_FROM appears to be a Messaging Service SID. Set TWILIO_MESSAGING_SERVICE_SID instead." }, { status: 500 })
+      }
+    }
+
+    const results: Array<{ phoneNumber: string; status: "sent" | "failed"; sid?: string; error?: string; code?: unknown }> = []
 
     for (const phoneNumber of phoneNumbers) {
       try {
-        // Format phone number (basic formatting - you might want to enhance this)
-        const formattedPhone = phoneNumber.startsWith("+") ? phoneNumber : `+1${phoneNumber.replace(/\D/g, "")}`
+        // Require E.164 format to avoid region mismatches that lead to 21612
+        const formattedPhone = phoneNumber.replace(/\s/g, "")
+        const isE164 = /^\+[1-9]\d{6,14}$/.test(formattedPhone)
+        if (!isE164) {
+          results.push({ phoneNumber, status: "failed", error: "Invalid phone number format. Use E.164, e.g. +441234567890" })
+          continue
+        }
 
         const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
           method: "POST",
@@ -38,11 +56,17 @@ export async function POST(request: NextRequest) {
             Authorization: `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64")}`,
             "Content-Type": "application/x-www-form-urlencoded",
           },
-          body: new URLSearchParams({
-            From: TWILIO_FROM,
-            To: formattedPhone,
-            Body: content,
-          }),
+          body: new URLSearchParams(
+            Object.fromEntries(
+              Object.entries({
+                // Use Messaging Service if available; otherwise use From
+                MessagingServiceSid: TWILIO_MESSAGING_SERVICE_SID || undefined,
+                From: TWILIO_MESSAGING_SERVICE_SID ? undefined : TWILIO_FROM,
+                To: formattedPhone,
+                Body: content,
+              }).filter(([, v]) => v !== undefined)
+            )
+          ),
         })
 
         const result = await response.json()
@@ -50,7 +74,7 @@ export async function POST(request: NextRequest) {
         if (response.ok) {
           results.push({ phoneNumber, status: "sent", sid: result.sid })
         } else {
-          results.push({ phoneNumber, status: "failed", error: result.message })
+          results.push({ phoneNumber, status: "failed", error: result.message || "Twilio error", code: result.code })
         }
       } catch (error) {
         results.push({ phoneNumber, status: "failed", error: "Network error" })
