@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { toast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -83,30 +84,155 @@ export default function BulkMessagingApp() {
     setIsLoading(true)
     setStatus("Sending messages...")
 
-    try {
-      // Send emails
-      const emailResponse = await fetch("/api/send-emails", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          emails: validEmails,
-          content: emailContent,
-        }),
-      })
-      const emailData: ApiResponse = (await parseApiResponse(emailResponse)) ?? {}
+    const getFailureMessages = (results: unknown) => {
+      if (!Array.isArray(results)) return [] as string[]
 
-      // Send SMS only if we have enough phone numbers and content
-      let smsResponse: Response | null = null
-      let smsData: ApiResponse | null = null
-      if (validPhoneNumbers.length >= 2 && smsContent.trim()) {
-        smsResponse = await fetch("/api/send-sms", {
+      const uniqueMessages = new Set<string>()
+      for (const entry of results) {
+        if (
+          entry &&
+          typeof entry === "object" &&
+          "status" in entry &&
+          (entry as { status?: string }).status === "failed" &&
+          "error" in entry &&
+          typeof (entry as { error?: unknown }).error === "string" &&
+          (entry as { error: string }).error.trim()
+        ) {
+          uniqueMessages.add((entry as { error: string }).error)
+        }
+      }
+
+      return Array.from(uniqueMessages)
+    }
+
+    const parseCount = (value: unknown) =>
+      typeof value === "number" && Number.isFinite(value) ? value : 0
+
+    const describeCounts = (sent: number, failed: number, label: string) => {
+      if (failed > 0) {
+        return `${label}: ${sent} sent, ${failed} failed`
+      }
+      return `${label}: ${sent} sent successfully`
+    }
+
+    let emailStatusMessage = ""
+    let smsStatusMessage = ""
+
+    try {
+      try {
+        const emailResponse = await fetch("/api/send-emails", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            phoneNumbers: validPhoneNumbers,
-            content: smsContent,
+            emails: validEmails,
+            content: emailContent,
           }),
         })
+
+        const emailData = await emailResponse.json()
+        const emailSentCount = parseCount((emailData as { sent?: unknown })?.sent)
+        const emailFailedCount = parseCount((emailData as { failed?: unknown })?.failed)
+        const emailFailures = getFailureMessages((emailData as { results?: unknown })?.results)
+
+        if (!emailResponse.ok || (emailData as { success?: unknown })?.success === false) {
+          const errorMessage =
+            (typeof (emailData as { error?: unknown })?.error === "string" &&
+            (emailData as { error: string }).error.trim()
+              ? (emailData as { error: string }).error
+              : emailFailures.join(" • ") || "Failed to send emails.")
+
+          toast({
+            title: "Email request failed",
+            description: errorMessage,
+            variant: "destructive",
+          })
+          emailStatusMessage = `Emails: ${errorMessage}`
+        } else if (emailFailedCount > 0) {
+          const failureSummary = emailFailures.join(" • ") || "Some emails failed to send."
+          toast({
+            title: "Email delivery issues",
+            description: failureSummary,
+            variant: "destructive",
+          })
+          emailStatusMessage = describeCounts(emailSentCount, emailFailedCount, "Emails")
+        } else {
+          toast({
+            title: "Emails sent",
+            description: `Delivered ${emailSentCount} email${emailSentCount === 1 ? "" : "s"} successfully.`,
+          })
+          emailStatusMessage = describeCounts(emailSentCount, emailFailedCount, "Emails")
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unexpected error sending emails."
+        toast({
+          title: "Email request error",
+          description: message,
+          variant: "destructive",
+        })
+        emailStatusMessage = `Emails: ${message}`
+        console.error("Email send error:", error)
+      }
+
+      if (validPhoneNumbers.length >= 2 && smsContent.trim()) {
+        try {
+          const smsResponse = await fetch("/api/send-sms", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              phoneNumbers: validPhoneNumbers,
+              content: smsContent,
+            }),
+          })
+
+          const smsData = await smsResponse.json()
+          const smsSentCount = parseCount((smsData as { sent?: unknown })?.sent)
+          const smsFailedCount = parseCount((smsData as { failed?: unknown })?.failed)
+          const smsFailures = getFailureMessages((smsData as { results?: unknown })?.results)
+
+          if (!smsResponse.ok || (smsData as { success?: unknown })?.success === false) {
+            const errorMessage =
+              (typeof (smsData as { error?: unknown })?.error === "string" &&
+              (smsData as { error: string }).error.trim()
+                ? (smsData as { error: string }).error
+                : smsFailures.join(" • ") || "Failed to send SMS messages.")
+
+            toast({
+              title: "SMS request failed",
+              description: errorMessage,
+              variant: "destructive",
+            })
+            smsStatusMessage = `SMS: ${errorMessage}`
+          } else if (smsFailedCount > 0) {
+            const failureSummary = smsFailures.join(" • ") || "Some SMS messages failed to send."
+            toast({
+              title: "SMS delivery issues",
+              description: failureSummary,
+              variant: "destructive",
+            })
+            smsStatusMessage = describeCounts(smsSentCount, smsFailedCount, "SMS")
+          } else {
+            toast({
+              title: "SMS sent",
+              description: `Delivered ${smsSentCount} SMS message${smsSentCount === 1 ? "" : "s"} successfully.`,
+            })
+            smsStatusMessage = describeCounts(smsSentCount, smsFailedCount, "SMS")
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unexpected error sending SMS messages."
+          toast({
+            title: "SMS request error",
+            description: message,
+            variant: "destructive",
+          })
+          smsStatusMessage = `SMS: ${message}`
+          console.error("SMS send error:", error)
+        }
+      }
+
+      const statusParts = [emailStatusMessage, smsStatusMessage].filter(Boolean)
+      setStatus(statusParts.join(" • "))
         smsData = await parseApiResponse(smsResponse)
       }
 
@@ -158,7 +284,14 @@ export default function BulkMessagingApp() {
 
       setStatus(statusParts.join(" "))
     } catch (error) {
-      setStatus("❌ Error sending messages. Please try again.")
+      const message =
+        error instanceof Error ? error.message : "Unexpected error sending messages."
+      toast({
+        title: "Bulk send failed",
+        description: message,
+        variant: "destructive",
+      })
+      setStatus(`❌ Error sending messages: ${message}`)
       console.error("Send error:", error)
     } finally {
       setIsLoading(false)
