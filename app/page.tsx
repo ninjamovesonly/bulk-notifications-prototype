@@ -47,6 +47,7 @@ export default function BulkMessagingApp() {
   );
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<string>("");
+  const [twilioHint, setTwilioHint] = useState<string>("");
 
   const addEmailField = () => {
     setEmails([...emails, ""]);
@@ -234,11 +235,34 @@ export default function BulkMessagingApp() {
             !smsResponse.ok ||
             (smsData as { success?: unknown })?.success === false
           ) {
-            const errorMessage =
-              typeof (smsData as { error?: unknown })?.error === "string" &&
+            // Try to extract a specific error message and code from results when present
+            const results = (smsData as { results?: unknown })?.results;
+            let firstCode: string | number | undefined;
+            let firstResultError: string | undefined;
+            if (Array.isArray(results) && results.length > 0) {
+              const r0 = results[0] as { error?: unknown; code?: unknown };
+              if (typeof r0?.error === "string" && r0.error.trim())
+                firstResultError = r0.error;
+              if (typeof r0?.code === "number" || typeof r0?.code === "string")
+                firstCode = r0.code as number | string;
+            }
+
+            const baseError =
+              (typeof (smsData as { error?: unknown })?.error === "string" &&
               (smsData as { error: string }).error.trim()
                 ? (smsData as { error: string }).error
-                : smsFailures.join(" • ") || "Failed to send SMS messages.";
+                : (smsFailures.join(" • ") || firstResultError || "Failed to send SMS messages."));
+
+            const errorMessage = firstCode ? `${baseError} (code ${firstCode})` : baseError;
+
+            // Set a helpful hint for common Twilio trial/code 21612 scenarios
+            if (firstCode === 21612 || firstCode === "21612") {
+              setTwilioHint(
+                "Twilio Trial hint: Try sending to a verified US +1 number, or attach a UK sender (e.g., a UK long code) to your Messaging Service to test UK delivery."
+              );
+            } else {
+              setTwilioHint("");
+            }
 
             toast({
               title: "SMS request failed",
@@ -249,6 +273,7 @@ export default function BulkMessagingApp() {
           } else if (smsFailedCount > 0) {
             const failureSummary =
               smsFailures.join(" • ") || "Some SMS messages failed to send.";
+            setTwilioHint("");
             toast({
               title: "SMS delivery issues",
               description: failureSummary,
@@ -260,6 +285,7 @@ export default function BulkMessagingApp() {
               "SMS"
             );
           } else {
+            setTwilioHint("");
             toast({
               title: "SMS sent",
               description: `Delivered ${smsSentCount} SMS message${
@@ -277,6 +303,7 @@ export default function BulkMessagingApp() {
             error instanceof Error
               ? error.message
               : "Unexpected error sending SMS messages.";
+          setTwilioHint("");
           toast({
             title: "SMS request error",
             description: message,
@@ -479,6 +506,11 @@ export default function BulkMessagingApp() {
               {status && (
                 <div className="p-4 rounded-lg bg-gray-50 border animate-fade-in">
                   <p className="text-sm font-medium">{status}</p>
+                </div>
+              )}
+              {twilioHint && (
+                <div className="p-3 rounded-md bg-yellow-50 border border-yellow-200 text-yellow-900 text-sm animate-fade-in">
+                  {twilioHint}
                 </div>
               )}
             </div>
